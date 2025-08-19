@@ -1,5 +1,6 @@
 pandas
 scoringrules
+scikit-learn
 
 [dev]
 pytest

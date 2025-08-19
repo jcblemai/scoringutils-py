@@ -6,7 +6,9 @@ This package provides tools to evaluate forecasts in a convenient framework base
 
 ## Current Status
 
-This package is an initial conversion of the original R `scoringutils` package. It currently supports the core functionality for scoring quantile forecasts using the Weighted Interval Score (WIS). Many features from the R package (e.g., other forecast types, additional metrics, plotting functions) have not yet been implemented.
+This package is an initial conversion of the original R `scoringutils` package. It currently supports scoring for **quantile forecasts** (using the Weighted Interval Score) and **point forecasts** (using Mean Absolute Error).
+
+Many features from the R package (e.g., other forecast types, additional metrics, plotting functions) have not yet been implemented.
 
 ## Installation
 
@@ -68,4 +70,54 @@ This will output a DataFrame with the calculated scores for each forecast unit.
 ```
   location       wis
 0        A  1.234567  # Example score
+```
+
+---
+
+### Scoring Point Forecasts
+
+Here is an example of how to score point forecasts.
+
+#### 1. Prepare your data
+
+For point forecasts, your DataFrame needs `observed` and `predicted` columns, along with the `forecast_unit`.
+
+```python
+import pandas as pd
+from scoringutils_py.core import ForecastPoint
+
+# Create sample data
+data = pd.DataFrame({
+    "observed": [10, 20],
+    "predicted": [12, 18],
+    "location": ["A", "B"],
+})
+
+# Define the unit of a single forecast
+forecast_unit = ["location"]
+```
+
+#### 2. Create a Forecast Object
+
+Use the `ForecastPoint` class.
+
+```python
+fc = ForecastPoint(data, forecast_unit)
+```
+
+#### 3. Score the Forecasts
+
+The `score` method for point forecasts calculates the Mean Absolute Error (MAE) by default.
+
+```python
+scores = fc.score()
+
+print(scores)
+```
+
+This will output:
+```
+  location  mae
+0        A  2.0
+1        B  2.0
 ```

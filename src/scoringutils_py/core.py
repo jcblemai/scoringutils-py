@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from typing import List, Optional, Dict, Any
 import scoringrules as sr
+from sklearn.metrics import mean_absolute_error
 
 
 def get_metrics_quantile() -> Dict[str, Any]:
@@ -10,6 +11,15 @@ def get_metrics_quantile() -> Dict[str, Any]:
     """
     return {
         'wis': sr.weighted_interval_score,
+    }
+
+
+def get_metrics_point() -> Dict[str, Any]:
+    """
+    Returns a dictionary of default scoring metrics for point forecasts.
+    """
+    return {
+        'mae': mean_absolute_error,
     }
 
 
@@ -110,3 +120,49 @@ class ForecastQuantile(Forecast):
             results.append(result_row)
 
         return pd.DataFrame(results)
+
+
+class ForecastPoint(Forecast):
+    """Class for point forecasts."""
+    def __init__(self, data: pd.DataFrame, forecast_unit: List[str]):
+        super().__init__(data, forecast_unit)
+        self._validate_point_data()
+
+    def score(self, metrics: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+        """
+        Calculates scores for point forecasts.
+        """
+        if metrics is None:
+            metrics = get_metrics_point()
+
+        # For point forecasts, each row is a forecast unit, so we can apply metrics directly.
+        # However, to be consistent, we group by forecast_unit. This also handles cases
+        # where the input data might have duplicate rows per forecast unit.
+
+        results = []
+        for metric_name, metric_func in metrics.items():
+            # Note: this is not the most efficient way, as it re-calculates the groupby for each metric.
+            # A future optimization could be to loop through groups first.
+            scores = self.data.groupby(self.forecast_unit).apply(
+                lambda g: metric_func([g["observed"].iloc[0]], [g["predicted"].iloc[0]])
+            )
+            scores.name = metric_name
+            results.append(scores)
+
+        if not results:
+            return pd.DataFrame()
+
+        return pd.concat(results, axis=1).reset_index()
+
+
+    def _validate_point_data(self):
+        """Validate the specific requirements for point forecast data."""
+        required_cols = ["observed", "predicted"]
+        for col in required_cols:
+            if col not in self.data.columns:
+                raise ValueError(f"Required column '{col}' not found in the data.")
+
+        if not pd.api.types.is_numeric_dtype(self.data["observed"]):
+            raise TypeError("'observed' column must be numeric.")
+        if not pd.api.types.is_numeric_dtype(self.data["predicted"]):
+            raise TypeError("'predicted' column must be numeric.")

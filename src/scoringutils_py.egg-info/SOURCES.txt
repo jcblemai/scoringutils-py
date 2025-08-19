@@ -9,3 +9,4 @@ src/scoringutils_py.egg-info/SOURCES.txt
 src/scoringutils_py.egg-info/dependency_links.txt
 src/scoringutils_py.egg-info/requires.txt
 src/scoringutils_py.egg-info/top_level.txt
+tests/test_core.py

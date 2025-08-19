@@ -1,7 +1,7 @@
 import pytest
 import pandas as pd
 import numpy as np
-from scoringutils_py.core import ForecastQuantile
+from scoringutils_py.core import ForecastQuantile, ForecastPoint
 
 @pytest.fixture
 def sample_quantile_data():
@@ -77,3 +77,53 @@ def test_median_only_forecast(forecast_unit):
     assert "wis" in scores.columns
     # For median-only, WIS is just the absolute error
     assert np.isclose(scores["wis"].iloc[0], 2.0)
+
+
+# ##################################
+# # Tests for ForecastPoint
+# ##################################
+
+@pytest.fixture
+def sample_point_data():
+    """Provides a sample DataFrame for testing point forecasts."""
+    return pd.DataFrame({
+        "observed": [10, 20],
+        "predicted": [12, 18],
+        "location": ["A", "B"],
+    })
+
+def test_forecast_point_creation(sample_point_data, forecast_unit):
+    """Test that a ForecastPoint object can be created successfully."""
+    try:
+        ForecastPoint(sample_point_data, forecast_unit)
+    except Exception as e:
+        pytest.fail(f"ForecastPoint creation failed with valid data: {e}")
+
+def test_point_missing_columns_raises_error(sample_point_data, forecast_unit):
+    """Test that missing required columns for point forecasts raise a ValueError."""
+    for col in ["observed", "predicted"]:
+        with pytest.raises(ValueError, match=f"Required column '{col}' not found"):
+            data = sample_point_data.drop(columns=col)
+            ForecastPoint(data, forecast_unit)
+
+def test_point_score_method_returns_dataframe(sample_point_data, forecast_unit):
+    """Test that the score method for point forecasts returns a DataFrame."""
+    fc = ForecastPoint(sample_point_data, forecast_unit)
+    scores = fc.score()
+    assert isinstance(scores, pd.DataFrame)
+    assert "location" in scores.columns
+    assert "mae" in scores.columns
+    assert len(scores) == 2
+
+def test_point_score_method_calculates_mae(sample_point_data, forecast_unit):
+    """Test that the score method for point forecasts calculates MAE correctly."""
+    fc = ForecastPoint(sample_point_data, forecast_unit)
+    scores = fc.score()
+
+    # Check MAE for location A
+    score_A = scores[scores["location"] == "A"]["mae"].iloc[0]
+    assert np.isclose(score_A, 2.0) # |10 - 12| = 2
+
+    # Check MAE for location B
+    score_B = scores[scores["location"] == "B"]["mae"].iloc[0]
+    assert np.isclose(score_B, 2.0) # |20 - 18| = 2
