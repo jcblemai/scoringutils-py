@@ -2,7 +2,11 @@
 
 A Python package for evaluating and scoring forecasts, inspired by the R package `scoringutils`.
 
-This package provides tools to evaluate forecasts in a convenient framework based on pandas DataFrames. It is currently under development.
+This package provides tools to evaluate forecasts in a convenient framework based on pandas DataFrames.
+
+## Current Status
+
+This package is an initial conversion of the original R `scoringutils` package. It currently supports the core functionality for scoring quantile forecasts using the Weighted Interval Score (WIS). Many features from the R package (e.g., other forecast types, additional metrics, plotting functions) have not yet been implemented.
 
 ## Installation
 
