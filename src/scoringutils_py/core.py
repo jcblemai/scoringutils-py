@@ -2,15 +2,40 @@ import pandas as pd
 import numpy as np
 from typing import List, Optional, Dict, Any
 import scoringrules as sr
-from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+from functools import partial
 
+
+# ##################################
+# # Metric Implementation Helpers
+# ##################################
+
+def _interval_coverage(observed: float, lower: float, upper: float) -> int:
+    """Check if observed value is within the interval."""
+    return 1 if lower <= observed <= upper else 0
+
+def _quantile_bias(observed: np.ndarray, predicted: np.ndarray, quantile_level: np.ndarray) -> float:
+    """Calculate bias for a set of quantiles."""
+    # I(y > q_alpha) - alpha
+    errors = (observed > predicted) - quantile_level
+    return np.mean(errors)
+
+
+# ##################################
+# # Get Default Metrics
+# ##################################
 
 def get_metrics_quantile() -> Dict[str, Any]:
     """
     Returns a dictionary of default scoring metrics for quantile forecasts.
     """
+    # For interval coverage, the function is the same, the logic in score()
+    # determines the interval range from the metric name.
     return {
         'wis': sr.weighted_interval_score,
+        'bias': _quantile_bias,
+        'interval_coverage_50': _interval_coverage,
+        'interval_coverage_90': _interval_coverage,
     }
 
 
@@ -20,7 +45,39 @@ def get_metrics_point() -> Dict[str, Any]:
     """
     return {
         'mae': mean_absolute_error,
+        'mse': mean_squared_error,
     }
+
+
+# ##################################
+# # Summarise Scores
+# ##################################
+
+def summarise_scores(scores: pd.DataFrame, by: List[str]) -> pd.DataFrame:
+    """
+    Summarise scores by grouping and averaging.
+
+    :param scores: A DataFrame of scores, typically the output of a `score()` method.
+    :param by: A list of column names to group by.
+    :return: A DataFrame with the summarised scores.
+    """
+    # Check if 'by' columns are in the scores DataFrame
+    missing_cols = [col for col in by if col not in scores.columns]
+    if missing_cols:
+        raise ValueError(f"Grouping columns not found in scores DataFrame: {', '.join(missing_cols)}")
+
+    # Identify metric columns (all numeric columns that are not in 'by')
+    metric_cols = [
+        col for col in scores.columns
+        if pd.api.types.is_numeric_dtype(scores[col]) and col not in by
+    ]
+
+    if not metric_cols:
+        # Return the grouping columns with no metrics if none are found
+        return scores[by].drop_duplicates().reset_index(drop=True)
+
+    summarised = scores.groupby(by)[metric_cols].mean().reset_index()
+    return summarised
 
 
 class Forecast:
@@ -83,39 +140,49 @@ class ForecastQuantile(Forecast):
         for name, group in grouped:
             result_row = dict(zip(self.forecast_unit, name if isinstance(name, tuple) else (name,)))
             observed = group["observed"].iloc[0]
+            available_quantiles = group["quantile_level"].to_numpy()
 
-            # Prepare data for scoring functions
-            median_pred = group.loc[group["quantile_level"] == 0.5, "predicted"].iloc[0]
-            lower_quantiles = sorted([q for q in group["quantile_level"].unique() if q < 0.5])
-            upper_quantiles = sorted([q for q in group["quantile_level"].unique() if q > 0.5], reverse=True)
-
-            if len(lower_quantiles) != len(upper_quantiles):
-                raise ValueError("Quantile forecasts must be symmetric around the median for WIS calculation.")
-            # upper_quantiles are sorted descending, so we don't need to reverse
-            for lq, uq in zip(lower_quantiles, upper_quantiles):
-                if not np.isclose(lq, 1 - uq):
-                    raise ValueError(f"Asymmetric quantiles found: {lq} and {uq}.")
-
-            # Calculate all requested metrics
             for metric_name, metric_func in metrics.items():
+                # WIS calculation
                 if metric_name == 'wis':
+                    median_pred = group.loc[group["quantile_level"] == 0.5, "predicted"].iloc[0]
+                    lower_quantiles = sorted([q for q in available_quantiles if q < 0.5])
                     if not lower_quantiles:
-                        # Median-only case, WIS is the absolute error
                         score_value = np.abs(observed - median_pred)
                     else:
+                        upper_quantiles = sorted([q for q in available_quantiles if q > 0.5], reverse=True)
+                        if len(lower_quantiles) != len(upper_quantiles) or not all(np.isclose(lq, 1 - uq) for lq, uq in zip(lower_quantiles, upper_quantiles)):
+                             raise ValueError("WIS requires symmetric quantiles. Check your input data.")
                         lower_preds = group[group["quantile_level"].isin(lower_quantiles)].sort_values("quantile_level")["predicted"].to_numpy()
                         upper_preds = group[group["quantile_level"].isin(upper_quantiles)].sort_values("quantile_level", ascending=False)["predicted"].to_numpy()
                         alphas = 2 * np.array(lower_quantiles)
-                        score_value = metric_func(
-                            observed,
-                            median_pred,
-                            lower_preds,
-                            upper_preds,
-                            alphas
-                        )
+                        score_value = metric_func(observed, median_pred, lower_preds, upper_preds, alphas)
                     result_row[metric_name] = score_value
-                # In the future, other metrics could be handled here
-                # with different data preparation logic.
+
+                # Bias calculation
+                elif metric_name == 'bias':
+                    score_value = metric_func(observed, group["predicted"].to_numpy(), available_quantiles)
+                    result_row[metric_name] = score_value
+
+                # Interval Coverage calculation
+                elif 'interval_coverage' in metric_name:
+                    try:
+                        interval_range = int(metric_name.split('_')[-1])
+                        alpha = (100 - interval_range) / 100
+                        lower_q = alpha / 2
+                        upper_q = 1 - alpha / 2
+
+                        # Check if quantiles are available
+                        if not (np.isclose(available_quantiles, lower_q).any() and np.isclose(available_quantiles, upper_q).any()):
+                            score_value = np.nan # Not applicable
+                        else:
+                            lower_pred = group.loc[np.isclose(group["quantile_level"], lower_q), "predicted"].iloc[0]
+                            upper_pred = group.loc[np.isclose(group["quantile_level"], upper_q), "predicted"].iloc[0]
+                            score_value = metric_func(observed, lower_pred, upper_pred)
+                        result_row[metric_name] = score_value
+                    except (ValueError, IndexError):
+                        # Handle cases where metric name is not in the expected format
+                        result_row[metric_name] = np.nan
 
             results.append(result_row)
 
@@ -135,24 +202,24 @@ class ForecastPoint(Forecast):
         if metrics is None:
             metrics = get_metrics_point()
 
-        # For point forecasts, each row is a forecast unit, so we can apply metrics directly.
-        # However, to be consistent, we group by forecast_unit. This also handles cases
-        # where the input data might have duplicate rows per forecast unit.
-
+        grouped = self.data.groupby(self.forecast_unit)
         results = []
-        for metric_name, metric_func in metrics.items():
-            # Note: this is not the most efficient way, as it re-calculates the groupby for each metric.
-            # A future optimization could be to loop through groups first.
-            scores = self.data.groupby(self.forecast_unit).apply(
-                lambda g: metric_func([g["observed"].iloc[0]], [g["predicted"].iloc[0]])
-            )
-            scores.name = metric_name
-            results.append(scores)
+
+        for name, group in grouped:
+            result_row = dict(zip(self.forecast_unit, name if isinstance(name, tuple) else (name,)))
+            observed = group["observed"].iloc[0]
+            predicted = group["predicted"].iloc[0]
+
+            for metric_name, metric_func in metrics.items():
+                score_value = metric_func([observed], [predicted])
+                result_row[metric_name] = score_value
+
+            results.append(result_row)
 
         if not results:
             return pd.DataFrame()
 
-        return pd.concat(results, axis=1).reset_index()
+        return pd.DataFrame(results)
 
 
     def _validate_point_data(self):

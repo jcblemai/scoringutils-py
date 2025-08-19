@@ -6,9 +6,12 @@ This package provides tools to evaluate forecasts in a convenient framework base
 
 ## Current Status
 
-This package is an initial conversion of the original R `scoringutils` package. It currently supports scoring for **quantile forecasts** (using the Weighted Interval Score) and **point forecasts** (using Mean Absolute Error).
+This package is an initial conversion of the original R `scoringutils` package. It currently supports:
+- **Quantile Forecasts**: Scored with Weighted Interval Score (WIS), Bias, and Interval Coverage.
+- **Point Forecasts**: Scored with Mean Absolute Error (MAE) and Mean Squared Error (MSE).
+- **Score Summarisation**: Scores can be summarised by grouping variables.
 
-Many features from the R package (e.g., other forecast types, additional metrics, plotting functions) have not yet been implemented.
+Many features from the R package (e.g., other forecast types, plotting) have not yet been implemented.
 
 ## Installation
 
@@ -58,7 +61,7 @@ fc = ForecastQuantile(data, forecast_unit)
 
 ### 3. Score the Forecasts
 
-Use the `score` method to calculate scores. By default, it calculates the Weighted Interval Score (WIS).
+Use the `score` method to calculate scores. By default, it calculates a range of relevant metrics.
 
 ```python
 scores = fc.score()
@@ -68,8 +71,29 @@ print(scores)
 
 This will output a DataFrame with the calculated scores for each forecast unit.
 ```
-  location       wis
-0        A  1.234567  # Example score
+  location       wis      bias  interval_coverage_50  interval_coverage_90
+0        A  1.234567 -0.055555                     1                     1 # Example scores
+```
+
+### 4. Summarise Scores
+
+You can summarise the raw scores by one or more grouping variables using the `summarise_scores` function.
+
+```python
+from scoringutils_py.core import summarise_scores
+
+# Add a model column to the data for summarisation
+scores['model'] = 'MyModel'
+
+summary = summarise_scores(scores, by=['model'])
+
+print(summary)
+```
+
+This will output the mean of each score, grouped by the `by` columns.
+```
+    model       wis      bias  interval_coverage_50  interval_coverage_90
+0  MyModel  1.234567 -0.055555                     1                     1
 ```
 
 ---
@@ -107,7 +131,7 @@ fc = ForecastPoint(data, forecast_unit)
 
 #### 3. Score the Forecasts
 
-The `score` method for point forecasts calculates the Mean Absolute Error (MAE) by default.
+The `score` method for point forecasts calculates Mean Absolute Error (MAE) and Mean Squared Error (MSE) by default.
 
 ```python
 scores = fc.score()
@@ -117,7 +141,7 @@ print(scores)
 
 This will output:
 ```
-  location  mae
-0        A  2.0
-1        B  2.0
+  location  mae  mse
+0        A  2.0  4.0
+1        B  2.0  4.0
 ```
