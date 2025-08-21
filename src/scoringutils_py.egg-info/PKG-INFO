@@ -1,0 +1,86 @@
+Metadata-Version: 2.4
+Name: scoringutils_py
+Version: 0.1.0
+Summary: A Python package for evaluating and scoring forecasts, inspired by the R package scoringutils.
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+License-File: LICENSE.md
+Requires-Dist: pandas
+Requires-Dist: scoringrules
+Requires-Dist: scikit-learn
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Dynamic: license-file
+
+# scoringutils_py
+
+A Python package for evaluating and scoring forecasts, inspired by the R package `scoringutils`.
+
+This package provides tools to evaluate forecasts in a convenient framework based on pandas DataFrames.
+
+## Current Status
+
+This package is an initial conversion of the original R `scoringutils` package. It currently supports the core functionality for scoring quantile forecasts using the Weighted Interval Score (WIS). Many features from the R package (e.g., other forecast types, additional metrics, plotting functions) have not yet been implemented.
+
+## Installation
+
+To install the package, clone the repository and install it using pip:
+
+```bash
+git clone <repository_url>
+cd <repository_name>
+pip install .
+```
+
+## Quick Start
+
+Here is a simple example of how to use `scoringutils_py` to score a quantile forecast.
+
+### 1. Prepare your data
+
+Your forecast data should be in a pandas DataFrame with the following columns:
+- `observed`: The true observed value.
+- `predicted`: The predicted value for a given quantile.
+- `quantile_level`: The quantile level (between 0 and 1).
+- Columns that uniquely identify a single forecast (the `forecast_unit`).
+
+```python
+import pandas as pd
+from scoringutils_py.core import ForecastQuantile
+
+# Create sample data
+data = pd.DataFrame({
+    "observed": [10] * 5,
+    "predicted": [8, 9, 10, 11, 12],
+    "quantile_level": [0.1, 0.25, 0.5, 0.75, 0.9],
+    "location": ["A"] * 5,
+})
+
+# Define the unit of a single forecast
+forecast_unit = ["location"]
+```
+
+### 2. Create a Forecast Object
+
+Use the `ForecastQuantile` class to validate and represent your forecast data.
+
+```python
+fc = ForecastQuantile(data, forecast_unit)
+```
+
+### 3. Score the Forecasts
+
+Use the `score` method to calculate scores. By default, it calculates the Weighted Interval Score (WIS).
+
+```python
+scores = fc.score()
+
+print(scores)
+```
+
+This will output a DataFrame with the calculated scores for each forecast unit.
+```
+  location       wis
+0        A  1.234567  # Example score
+```
